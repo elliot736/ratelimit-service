@@ -1,0 +1,11 @@
+{
+  "name": "ratelimit-service",
+  "version": "0.1.0",
+  "description": "Distributed rate limiting library for Node.js",
+  "author": "elliot736 (https://ksibati.de)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  }
+}
