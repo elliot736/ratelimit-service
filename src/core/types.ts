@@ -1,4 +1,3 @@
-// TODO: consider adding generic type parameter
 /** Result returned after a rate limit check. */
 export interface RateLimitResult {
   /** Whether the request is allowed. */
