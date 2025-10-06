@@ -1,4 +1,3 @@
-// TODO: add error codes enum
 import type { RateLimitResult } from './core/types.js';
 
 /** Thrown when a request exceeds the rate limit. */
