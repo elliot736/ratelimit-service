@@ -1,4 +1,3 @@
-// TODO: add batch operation methods
 /**
  * Abstract store interface that wraps the Lua EVAL call.
  * This allows swapping between Redis-backed and in-memory implementations.
