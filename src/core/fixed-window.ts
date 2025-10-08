@@ -1,4 +1,3 @@
-// TODO: handle clock skew
 import type { Store } from '../store/store.js';
 import type { RateLimitResult, RateLimiterConfig } from './types.js';
 import { FIXED_WINDOW_SCRIPT } from './lua/fixed-window.lua.js';
