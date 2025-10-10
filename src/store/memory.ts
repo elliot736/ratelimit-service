@@ -1,4 +1,3 @@
-// TODO: add LRU eviction
 import type { Store } from './store.js';
 import { TOKEN_BUCKET_SCRIPT } from '../core/lua/token-bucket.lua.js';
 import { SLIDING_WINDOW_SCRIPT } from '../core/lua/sliding-window.lua.js';
