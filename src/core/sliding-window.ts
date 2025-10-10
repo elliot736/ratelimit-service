@@ -1,4 +1,3 @@
-// TODO: optimize sorted set cleanup
 import type { Store } from '../store/store.js';
 import type { RateLimitResult, RateLimiterConfig } from './types.js';
 import { SLIDING_WINDOW_SCRIPT } from './lua/sliding-window.lua.js';
