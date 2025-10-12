@@ -1,4 +1,3 @@
-// TODO: handle burst overflow
 import type { Store } from '../store/store.js';
 import type { RateLimitResult, TokenBucketConfig } from './types.js';
 import { TOKEN_BUCKET_SCRIPT } from './lua/token-bucket.lua.js';
