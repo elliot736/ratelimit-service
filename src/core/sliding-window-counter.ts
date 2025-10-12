@@ -1,4 +1,3 @@
-// TODO: consider precision tradeoffs
 import type { Store } from '../store/store.js';
 import type { RateLimitResult, RateLimiterConfig } from './types.js';
 import { SLIDING_WINDOW_COUNTER_SCRIPT } from './lua/sliding-window-counter.lua.js';
