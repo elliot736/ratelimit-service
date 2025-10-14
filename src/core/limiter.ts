@@ -1,4 +1,3 @@
-// TODO: add algorithm auto-detection
 import type { Store } from '../store/store.js';
 import type {
   AlgorithmType,
