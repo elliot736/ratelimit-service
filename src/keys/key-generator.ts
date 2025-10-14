@@ -1,4 +1,3 @@
-// TODO: add composite key support
 /**
  * Minimal request shape for key generation.
  * Framework-specific middleware will map their request types to this.
