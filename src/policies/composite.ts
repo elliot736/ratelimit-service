@@ -1,4 +1,3 @@
-// TODO: add short-circuit evaluation
 import type { RateLimitResult } from '../core/types.js';
 import type { RateLimitPolicy } from './policy.js';
 import type { RateLimiter } from '../core/limiter.js';
