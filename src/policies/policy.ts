@@ -1,4 +1,3 @@
-// TODO: add policy validation
 import type { AlgorithmType, RateLimiterConfig, TokenBucketConfig } from '../core/types.js';
 import type { KeyGenerator } from '../keys/key-generator.js';
 
