@@ -1,4 +1,3 @@
-// TODO: add tier fallback behavior
 import type { AlgorithmType, RateLimiterConfig } from '../core/types.js';
 import type { KeyGeneratorRequest } from '../keys/key-generator.js';
 
