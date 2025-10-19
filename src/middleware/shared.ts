@@ -1,4 +1,3 @@
-// TODO: add rate limit header configuration
 import type { RateLimitResult, RateLimiterConfig, TokenBucketConfig } from '../core/types.js';
 import type { RateLimiter } from '../core/limiter.js';
 import type { KeyGenerator, KeyGeneratorRequest } from '../keys/key-generator.js';
