@@ -1,4 +1,3 @@
-// TODO: add skip option
 import type { MiddlewareConfig } from './shared.js';
 import { generateHeaders, handleRateLimit } from './shared.js';
 import type { KeyGeneratorRequest } from '../keys/key-generator.js';
