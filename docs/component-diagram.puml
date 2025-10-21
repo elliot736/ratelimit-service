@@ -1,0 +1,123 @@
+@startuml component-diagram
+skinparam componentStyle rectangle
+skinparam linetype ortho
+
+title Distributed Rate Limiting Service — Component Architecture
+
+' ── External Clients ──────────────────────────────────────
+
+actor "HTTP Client" as client
+
+' ── Framework Middleware Layer ─────────────────────────────
+
+package "Middleware Layer" as MW {
+  component [Express Middleware\n<<expressRateLimit>>] as express
+  component [Fastify Plugin\n<<fastifyRateLimit>>] as fastify
+  component [Hono Middleware\n<<honoRateLimit>>] as hono
+  component [Shared Middleware\n<<handleRateLimit>>\n<<generateHeaders>>\n<<formatRateLimitResponse>>] as shared
+}
+
+client --> express : HTTP request
+client --> fastify : HTTP request
+client --> hono : HTTP request
+
+express --> shared : delegates
+fastify --> shared : delegates
+hono --> shared : delegates
+
+' ── Key Generation ────────────────────────────────────────
+
+package "Key Generation" as KG {
+  component [KeyGenerator\n<<type alias>>] as keygen
+  component [Preset Generators\nbyIp | byUserId | byApiKey\nbyHeader | composite | custom] as presets
+}
+
+shared --> keygen : extracts rate limit key
+presets ..> keygen : implements
+
+' ── Policy Layer ──────────────────────────────────────────
+
+package "Policy Layer" as PL {
+  component [RateLimitPolicy\n<<interface>>\nname + algorithm + config\n+ keyGenerator] as policy
+  component [TieredPolicy\nper-tier configs\nresolve(req) -> tier config] as tiered
+  component [CompositePolicy\ncombines multiple policies\nreturns most restrictive] as composite
+}
+
+shared --> policy : uses policy config
+shared --> tiered : resolves tier
+shared --> composite : evaluates all sub-policies
+composite --> policy : combines 1..*
+
+' ── Core Rate Limiter ─────────────────────────────────────
+
+package "Core Engine" as CE {
+  component [RateLimiter\nconsume(key, config, cost?)\nreset(key) | get(key)] as limiter
+
+  package "Algorithm Implementations" as algos {
+    component [Token Bucket\n<<tokenBucketConsume>>\nhash: {tokens, last_refill}\nLua script atomic] as tb
+    component [Fixed Window\n<<fixedWindowConsume>>\nper-window counter\nLua script atomic] as fw
+    component [Sliding Window Log\n<<slidingWindowConsume>>\nsorted set of timestamps\nLua script atomic] as sw
+    component [Sliding Window Counter\n<<slidingWindowCounterConsume>>\ntwo windows + weighted interpolation\nLua script atomic] as swc
+  }
+}
+
+shared --> limiter : consume()
+composite --> limiter : consume() per sub-policy
+limiter --> tb : algorithm = "token-bucket"
+limiter --> fw : algorithm = "fixed-window"
+limiter --> sw : algorithm = "sliding-window"
+limiter --> swc : algorithm = "sliding-window-counter"
+
+' ── Store Abstraction ─────────────────────────────────────
+
+package "Store Abstraction" as SA {
+  interface "Store\n<<interface>>\neval(script, keys, args)\ndisconnect()" as store
+
+  component [RedisStore\nioredis client\nfail-open / fail-closed\nevent emitters] as redis
+  component [MemoryStore\nin-memory Lua emulation\nfor testing / single-instance] as memory
+}
+
+tb --> store : eval() Lua script
+fw --> store : eval() Lua script
+sw --> store : eval() Lua script
+swc --> store : eval() Lua script
+
+redis ..|> store
+memory ..|> store
+
+' ── External Dependencies ─────────────────────────────────
+
+database "Redis Server" as redisdb
+
+redis --> redisdb : EVAL / EVALSHA
+
+' ── Types & Errors ────────────────────────────────────────
+
+package "Types & Errors" as TE {
+  component [RateLimitResult\n{allowed, limit, remaining,\nresetMs, retryAfterMs?}] as result
+  component [Config Types\nRateLimiterConfig\nTokenBucketConfig\nAlgorithmType] as configs
+  component [Errors\nRateLimitExceededError\nStoreConnectionError\nInvalidConfigError] as errors
+}
+
+limiter ..> result : returns
+limiter ..> configs : configured by
+limiter ..> errors : throws
+shared ..> result : reads for headers
+
+' ── Data Flow Notes ───────────────────────────────────────
+
+note right of shared
+  1. Extract key via KeyGenerator
+  2. Resolve config from policy / tier
+  3. Call limiter.consume()
+  4. Generate IETF rate limit headers
+  5. Return 429 or pass through
+end note
+
+note bottom of algos
+  Each algorithm executes a single
+  atomic Lua script via Store.eval(),
+  ensuring correctness under concurrency.
+end note
+
+@enduml
