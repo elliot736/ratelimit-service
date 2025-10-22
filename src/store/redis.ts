@@ -1,4 +1,3 @@
-// TODO: add connection pooling
 import type { Store } from './store.js';
 
 type FailMode = 'open' | 'closed';
