@@ -662,6 +662,405 @@ Approximate benchmarks (single Redis instance, localhost):
 
 Redis latency is dominated by the network round trip. The Lua scripts themselves execute in microseconds on the Redis server. For production deployments, Redis response times are typically 0.1-1ms depending on network topology.
 
+## Architecture
+
+### Class Diagram
+
+```plantuml
+@startuml class-diagram
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+
+' ── Core Types ─────────────────────────────────────────────
+
+package "core/types" {
+  interface RateLimitResult {
+    +allowed: boolean
+    +limit: number
+    +remaining: number
+    +resetMs: number
+    +retryAfterMs?: number
+  }
+
+  interface RateLimiterConfig {
+    +limit: number
+    +windowMs: number
+  }
+
+  interface TokenBucketConfig {
+    +capacity: number
+    +refillRate: number
+  }
+
+  enum AlgorithmType {
+    token-bucket
+    sliding-window
+    sliding-window-counter
+    fixed-window
+  }
+}
+
+' ── Core Limiter ───────────────────────────────────────────
+
+package "core" {
+  class RateLimiter {
+    -store: Store
+    -algorithm: AlgorithmType
+    -keyPrefix: string
+    -nowFn: () => number
+    +constructor(options: RateLimiterOptions)
+    +consume(key: string, config: RateLimiterConfig | TokenBucketConfig, cost?: number): Promise<RateLimitResult>
+    +reset(key: string): Promise<void>
+    +get(key: string): Promise<RateLimitResult | null>
+  }
+
+  class "<<function>> tokenBucketConsume" as tokenBucketConsume {
+    (store, key, config, nowMs, cost): Promise<RateLimitResult>
+  }
+
+  class "<<function>> fixedWindowConsume" as fixedWindowConsume {
+    (store, key, config, nowMs, cost): Promise<RateLimitResult>
+  }
+
+  class "<<function>> slidingWindowConsume" as slidingWindowConsume {
+    (store, key, config, nowMs, cost): Promise<RateLimitResult>
+  }
+
+  class "<<function>> slidingWindowCounterConsume" as slidingWindowCounterConsume {
+    (store, key, config, nowMs, cost): Promise<RateLimitResult>
+  }
+}
+
+RateLimiter --> tokenBucketConsume : delegates
+RateLimiter --> fixedWindowConsume : delegates
+RateLimiter --> slidingWindowConsume : delegates
+RateLimiter --> slidingWindowCounterConsume : delegates
+RateLimiter --> AlgorithmType : selects via
+RateLimiter ..> RateLimitResult : returns
+
+' ── Store Layer ────────────────────────────────────────────
+
+package "store" {
+  interface Store {
+    +eval(script: string, keys: string[], args: (string | number)[]): Promise<unknown>
+    +disconnect(): Promise<void>
+  }
+
+  class RedisStore implements Store {
+    -client: RedisClient
+    -failMode: "open" | "closed"
+    -ownsClient: boolean
+    -eventHandlers: Map<string, EventHandler[]>
+    +constructor(options: RedisStoreOptions)
+    +eval(script, keys, args): Promise<unknown>
+    +disconnect(): Promise<void>
+    +on(event: "error" | "reconnect", handler): void
+    -emit(event, ...args): void
+    -{static} requireIoredis(): RedisClient constructor
+  }
+
+  class MemoryStore implements Store {
+    -data: Map<string, MemoryEntry>
+    -hashes: Map<string, Map<string, string>>
+    -hashExpiry: Map<string, number>
+    -sortedSets: Map<string, Map<string, number>>
+    -sortedSetExpiry: Map<string, number>
+    -counters: Map<string, {value, expiresAt?}>
+    +nowFn: () => number
+    +constructor(options?: {nowFn?})
+    +eval(script, keys, args): Promise<unknown>
+    +disconnect(): Promise<void>
+    -cleanExpired(): void
+    -evalTokenBucket(key, args): number[]
+    -evalSlidingWindow(key, args): number[]
+    -evalSlidingWindowCounter(key, args): number[]
+    -evalFixedWindow(key, args): number[]
+  }
+
+  interface RedisStoreOptions {
+    +url?: string
+    +host?: string
+    +port?: number
+    +password?: string
+    +db?: number
+    +keyPrefix?: string
+    +failMode?: "open" | "closed"
+    +client?: RedisClient
+  }
+}
+
+RateLimiter o-- Store : uses
+tokenBucketConsume --> Store : eval()
+fixedWindowConsume --> Store : eval()
+slidingWindowConsume --> Store : eval()
+slidingWindowCounterConsume --> Store : eval()
+RedisStore ..> RedisStoreOptions : configured by
+
+' ── Key Generators ─────────────────────────────────────────
+
+package "keys" {
+  interface KeyGeneratorRequest {
+    +ip?: string
+    +headers: Record<string, string | string[] | undefined>
+    +userId?: string
+  }
+
+  class "<<type>> KeyGenerator" as KeyGenerator {
+    (req: KeyGeneratorRequest): string
+  }
+
+  class "<<preset generators>>" as PresetGenerators {
+    +{static} byIp: KeyGenerator
+    +{static} byUserId: KeyGenerator
+    +{static} byApiKey(headerName?): KeyGenerator
+    +{static} byHeader(headerName): KeyGenerator
+    +{static} composite(...generators): KeyGenerator
+    +{static} custom(fn): KeyGenerator
+  }
+}
+
+PresetGenerators ..|> KeyGenerator : produces
+KeyGenerator --> KeyGeneratorRequest : reads from
+
+' ── Policies ───────────────────────────────────────────────
+
+package "policies" {
+  interface RateLimitPolicy {
+    +name: string
+    +algorithm: AlgorithmType
+    +config: RateLimiterConfig | TokenBucketConfig
+    +keyGenerator: KeyGenerator
+  }
+
+  class TieredPolicy {
+    -tiers: Record<string, RateLimiterConfig>
+    -algorithm: AlgorithmType
+    -tierResolver: (req) => string
+    -defaultTier: string
+    +constructor(tiers, options: TieredPolicyOptions)
+    +resolve(req: KeyGeneratorRequest): TieredResolution
+    +getAlgorithm(): AlgorithmType
+    +getTierNames(): string[]
+  }
+
+  class CompositePolicy {
+    -policies: RateLimitPolicy[]
+    +constructor(policies: RateLimitPolicy[])
+    +consume(limiterFactory, req): Promise<RateLimitResult>
+    +getPolicies(): readonly RateLimitPolicy[]
+    -mergeResults(results): RateLimitResult
+  }
+
+  interface TieredResolution {
+    +config: RateLimiterConfig
+    +tierName: string
+  }
+}
+
+RateLimitPolicy --> AlgorithmType
+RateLimitPolicy --> KeyGenerator : uses
+CompositePolicy o-- "1..*" RateLimitPolicy : combines
+CompositePolicy --> RateLimiter : delegates to
+TieredPolicy --> AlgorithmType
+TieredPolicy ..> TieredResolution : returns
+
+' ── Middleware ─────────────────────────────────────────────
+
+package "middleware" {
+  interface MiddlewareConfig {
+    +limiter: RateLimiter
+    +keyGenerator?: KeyGenerator
+    +policy?: RateLimitPolicy
+    +tieredPolicy?: TieredPolicy
+    +compositePolicy?: CompositePolicy
+    +onRateLimited?: (key, result) => void
+    +skipFailedRequests?: boolean
+    +skipSuccessfulRequests?: boolean
+    +skip?: (req) => boolean
+    +requestPropertyName?: string
+  }
+
+  class "<<function>> expressRateLimit" as expressRateLimit {
+    (config: MiddlewareConfig): Express.Middleware
+  }
+
+  class "<<function>> fastifyRateLimit" as fastifyRateLimit {
+    (config: MiddlewareConfig): FastifyPluginAsync
+  }
+
+  class "<<function>> honoRateLimit" as honoRateLimit {
+    (config: MiddlewareConfig): MiddlewareHandler
+  }
+
+  class "<<shared>>" as SharedMiddleware {
+    +{static} generateHeaders(result): Record<string, string>
+    +{static} formatRateLimitResponse(result): {status, body, headers}
+    +{static} handleRateLimit(config, req): Promise<{result, response, key}>
+  }
+}
+
+MiddlewareConfig --> RateLimiter
+MiddlewareConfig --> RateLimitPolicy
+MiddlewareConfig --> TieredPolicy
+MiddlewareConfig --> CompositePolicy
+expressRateLimit --> MiddlewareConfig : reads
+fastifyRateLimit --> MiddlewareConfig : reads
+honoRateLimit --> MiddlewareConfig : reads
+expressRateLimit --> SharedMiddleware : uses
+fastifyRateLimit --> SharedMiddleware : uses
+honoRateLimit --> SharedMiddleware : uses
+
+' ── Errors ─────────────────────────────────────────────────
+
+package "errors" {
+  class RateLimitExceededError extends Error {
+    +result: RateLimitResult
+    +constructor(result: RateLimitResult)
+  }
+
+  class StoreConnectionError extends Error {
+    +cause?: Error
+    +constructor(message: string, cause?: Error)
+  }
+
+  class InvalidConfigError extends Error {
+    +constructor(message: string)
+  }
+}
+
+class Error
+
+@enduml
+```
+
+### Component Diagram
+
+```plantuml
+@startuml component-diagram
+skinparam componentStyle rectangle
+skinparam linetype ortho
+
+title Distributed Rate Limiting Service — Component Architecture
+
+' ── External Clients ──────────────────────────────────────
+
+actor "HTTP Client" as client
+
+' ── Framework Middleware Layer ─────────────────────────────
+
+package "Middleware Layer" as MW {
+  component [Express Middleware\n<<expressRateLimit>>] as express
+  component [Fastify Plugin\n<<fastifyRateLimit>>] as fastify
+  component [Hono Middleware\n<<honoRateLimit>>] as hono
+  component [Shared Middleware\n<<handleRateLimit>>\n<<generateHeaders>>\n<<formatRateLimitResponse>>] as shared
+}
+
+client --> express : HTTP request
+client --> fastify : HTTP request
+client --> hono : HTTP request
+
+express --> shared : delegates
+fastify --> shared : delegates
+hono --> shared : delegates
+
+' ── Key Generation ────────────────────────────────────────
+
+package "Key Generation" as KG {
+  component [KeyGenerator\n<<type alias>>] as keygen
+  component [Preset Generators\nbyIp | byUserId | byApiKey\nbyHeader | composite | custom] as presets
+}
+
+shared --> keygen : extracts rate limit key
+presets ..> keygen : implements
+
+' ── Policy Layer ──────────────────────────────────────────
+
+package "Policy Layer" as PL {
+  component [RateLimitPolicy\n<<interface>>\nname + algorithm + config\n+ keyGenerator] as policy
+  component [TieredPolicy\nper-tier configs\nresolve(req) -> tier config] as tiered
+  component [CompositePolicy\ncombines multiple policies\nreturns most restrictive] as composite
+}
+
+shared --> policy : uses policy config
+shared --> tiered : resolves tier
+shared --> composite : evaluates all sub-policies
+composite --> policy : combines 1..*
+
+' ── Core Rate Limiter ─────────────────────────────────────
+
+package "Core Engine" as CE {
+  component [RateLimiter\nconsume(key, config, cost?)\nreset(key) | get(key)] as limiter
+
+  package "Algorithm Implementations" as algos {
+    component [Token Bucket\n<<tokenBucketConsume>>\nhash: {tokens, last_refill}\nLua script atomic] as tb
+    component [Fixed Window\n<<fixedWindowConsume>>\nper-window counter\nLua script atomic] as fw
+    component [Sliding Window Log\n<<slidingWindowConsume>>\nsorted set of timestamps\nLua script atomic] as sw
+    component [Sliding Window Counter\n<<slidingWindowCounterConsume>>\ntwo windows + weighted interpolation\nLua script atomic] as swc
+  }
+}
+
+shared --> limiter : consume()
+composite --> limiter : consume() per sub-policy
+limiter --> tb : algorithm = "token-bucket"
+limiter --> fw : algorithm = "fixed-window"
+limiter --> sw : algorithm = "sliding-window"
+limiter --> swc : algorithm = "sliding-window-counter"
+
+' ── Store Abstraction ─────────────────────────────────────
+
+package "Store Abstraction" as SA {
+  interface "Store\n<<interface>>\neval(script, keys, args)\ndisconnect()" as store
+
+  component [RedisStore\nioredis client\nfail-open / fail-closed\nevent emitters] as redis
+  component [MemoryStore\nin-memory Lua emulation\nfor testing / single-instance] as memory
+}
+
+tb --> store : eval() Lua script
+fw --> store : eval() Lua script
+sw --> store : eval() Lua script
+swc --> store : eval() Lua script
+
+redis ..|> store
+memory ..|> store
+
+' ── External Dependencies ─────────────────────────────────
+
+database "Redis Server" as redisdb
+
+redis --> redisdb : EVAL / EVALSHA
+
+' ── Types & Errors ────────────────────────────────────────
+
+package "Types & Errors" as TE {
+  component [RateLimitResult\n{allowed, limit, remaining,\nresetMs, retryAfterMs?}] as result
+  component [Config Types\nRateLimiterConfig\nTokenBucketConfig\nAlgorithmType] as configs
+  component [Errors\nRateLimitExceededError\nStoreConnectionError\nInvalidConfigError] as errors
+}
+
+limiter ..> result : returns
+limiter ..> configs : configured by
+limiter ..> errors : throws
+shared ..> result : reads for headers
+
+' ── Data Flow Notes ───────────────────────────────────────
+
+note right of shared
+  1. Extract key via KeyGenerator
+  2. Resolve config from policy / tier
+  3. Call limiter.consume()
+  4. Generate IETF rate limit headers
+  5. Return 429 or pass through
+end note
+
+note bottom of algos
+  Each algorithm executes a single
+  atomic Lua script via Store.eval(),
+  ensuring correctness under concurrency.
+end note
+
+@enduml
+```
+
 ## Contributing
 
 ```bash
