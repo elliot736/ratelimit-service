@@ -1,4 +1,3 @@
-// TODO: add convenience re-exports
 // Core
 export { RateLimiter } from './core/limiter.js';
 export type {
