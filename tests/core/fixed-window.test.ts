@@ -1,3 +1,4 @@
+// TODO: add boundary tests
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { MemoryStore } from '../../src/store/memory.js';
 import { fixedWindowConsume } from '../../src/core/fixed-window.js';
