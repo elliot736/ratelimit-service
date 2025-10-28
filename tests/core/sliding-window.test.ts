@@ -1,3 +1,4 @@
+// TODO: fix timing sensitivity
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { MemoryStore } from '../../src/store/memory.js';
 import { slidingWindowConsume } from '../../src/core/sliding-window.js';
