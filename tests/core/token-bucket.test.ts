@@ -1,3 +1,4 @@
+// TODO: add refill precision tests
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { MemoryStore } from '../../src/store/memory.js';
 import { tokenBucketConsume } from '../../src/core/token-bucket.js';
