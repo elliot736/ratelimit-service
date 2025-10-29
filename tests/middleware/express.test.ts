@@ -1,4 +1,3 @@
-// TODO: test custom error handler
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { expressRateLimit } from '../../src/middleware/express.js';
 import { RateLimiter } from '../../src/core/limiter.js';
