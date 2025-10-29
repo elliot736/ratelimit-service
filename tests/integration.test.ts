@@ -1,3 +1,4 @@
+// TODO: add multi-algorithm integration test
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { RateLimiter } from '../src/core/limiter.js';
 import { MemoryStore } from '../src/store/memory.js';
