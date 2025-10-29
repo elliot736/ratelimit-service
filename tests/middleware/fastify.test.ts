@@ -1,3 +1,4 @@
+// TODO: test hook cleanup
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { fastifyRateLimit } from '../../src/middleware/fastify.js';
 import { RateLimiter } from '../../src/core/limiter.js';
