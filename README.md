@@ -1,6 +1,8 @@
 <p align="center"><h1 align="center">ratelimit-service</h1><p align="center">Distributed rate limiting for Node.js.<br/>Four algorithms, Redis Lua atomicity, Express/Fastify/Hono middleware.</p></p>
 
 <p align="center">
+  <a href="#why-ratelimit-service">Why</a> &nbsp;&middot;&nbsp;
+  <a href="#features">Features</a> &nbsp;&middot;&nbsp;
   <a href="#algorithm-comparison">Algorithms</a> &nbsp;&middot;&nbsp;
   <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
   <a href="#usage">Usage</a> &nbsp;&middot;&nbsp;
@@ -15,6 +17,8 @@
 
 ## Table of Contents
 
+- [Why ratelimit-service](#why-ratelimit-service)
+- [Features](#features)
 - [Algorithm Comparison](#algorithm-comparison)
   - [Token Bucket](#token-bucket)
   - [Sliding Window Log](#sliding-window-log)
@@ -45,6 +49,26 @@
 - [Architecture](#architecture)
 - [Development](#development)
 - [License](#license)
+
+---
+
+## Why ratelimit-service
+
+Most rate limiters ship one algorithm and hope it covers every use case. But different scenarios need different algorithms. APIs need burst tolerance (token bucket). Quotas need accuracy (sliding window log). Simple counters need memory efficiency (fixed window). The "general purpose" recommendation (sliding window counter) is a great default, but it should not be the only option.
+
+ratelimit-service ships four algorithms with atomic Redis Lua scripts. Pick the right algorithm for each endpoint, swap stores between Redis and in-memory without changing business logic, and add rate limiting to any Express, Fastify, or Hono route with a single middleware call.
+
+## Features
+
+- **Four algorithms.** Token bucket, sliding window log, sliding window counter, fixed window. Each trades off accuracy, memory, and burst handling differently.
+- **Atomic Redis Lua scripts.** Every check-and-update runs as a single atomic operation. No race conditions under concurrency.
+- **Three framework adapters.** Express, Fastify, Hono middleware out of the box. Each adapter is under 50 lines of code wrapping shared logic.
+- **IETF-compliant headers.** `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` on every response. `Retry-After` on 429s.
+- **Tiered policies.** Different limits per user tier (free/pro/enterprise). Tier resolved per-request from JWT claims or any custom function.
+- **Composite policies.** Enforce multiple limits simultaneously: 10 requests/second AND 1,000 requests/hour. All must pass.
+- **Pluggable stores.** Redis for distributed rate limiting, in-memory for single-instance and testing. Same API, same behavior.
+- **Fail-open or fail-closed.** When Redis is unavailable, choose whether to allow all requests (fail-open) or reject all requests (fail-closed).
+- **Flexible key generation.** By IP, user ID, API key, HTTP header, or any custom function. Compose multiple generators into a single key.
 
 ---
 
