@@ -133,7 +133,7 @@ Simple and efficient, but allows double the limit at window boundaries.
 ## Quick Start
 
 ```bash
-npm install ratelimit-service
+npm install github:elliot736/ratelimit-service
 ```
 
 ```typescript
