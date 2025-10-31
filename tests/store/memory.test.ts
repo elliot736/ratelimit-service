@@ -1,3 +1,4 @@
+// TODO: add concurrent access tests
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { MemoryStore } from '../../src/store/memory.js';
 import { TOKEN_BUCKET_SCRIPT } from '../../src/core/lua/token-bucket.lua.js';
