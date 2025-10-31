@@ -1,26 +1,52 @@
-# ratelimit-service
+<p align="center"><h1 align="center">ratelimit-service</h1><p align="center">Distributed rate limiting for Node.js.<br/>Four algorithms, Redis Lua atomicity, Express/Fastify/Hono middleware.</p></p>
 
-> A distributed rate limiting library for Node.js -- four algorithms, Redis-backed with Lua atomicity, middleware for Express/Fastify/Hono.
+<p align="center">
+  <a href="#algorithm-comparison">Algorithms</a> &nbsp;&middot;&nbsp;
+  <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
+  <a href="#usage">Usage</a> &nbsp;&middot;&nbsp;
+  <a href="#how-it-works">How It Works</a> &nbsp;&middot;&nbsp;
+  <a href="#api-reference">API Reference</a> &nbsp;&middot;&nbsp;
+  <a href="#design-decisions">Design Decisions</a> &nbsp;&middot;&nbsp;
+  <a href="#performance">Performance</a> &nbsp;&middot;&nbsp;
+  <a href="#architecture">Architecture</a> &nbsp;&middot;&nbsp;
+  <a href="#development">Development</a> &nbsp;&middot;&nbsp;
+  <a href="#license">License</a>
+</p>
 
-[![CI](https://github.com/elliot736/ratelimit-service/actions/workflows/ci.yml/badge.svg)](https://github.com/elliot736/ratelimit-service/actions/workflows/ci.yml)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://typescriptlang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+## Table of Contents
 
-## Why ratelimit-service?
+- [Algorithm Comparison](#algorithm-comparison)
+  - [Token Bucket](#token-bucket)
+  - [Sliding Window Log](#sliding-window-log)
+  - [Sliding Window Counter](#sliding-window-counter)
+  - [Fixed Window](#fixed-window)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+  - [Express](#express)
+  - [Fastify](#fastify)
+  - [Hono](#hono)
+  - [Tiered Rate Limiting](#tiered-rate-limiting)
+  - [Composite Policies](#composite-policies)
+  - [Custom Key Generation](#custom-key-generation)
+  - [Redis Configuration](#redis-configuration)
+  - [In-Memory Store](#in-memory-store)
+- [How It Works](#how-it-works)
+  - [Lua Script Atomicity](#lua-script-atomicity)
+  - [IETF Rate Limit Headers](#ietf-rate-limit-headers)
+- [API Reference](#api-reference)
+  - [Core](#core)
+  - [Stores](#stores)
+  - [Middleware](#middleware)
+  - [Policies](#policies)
+  - [Key Generators](#key-generators)
+  - [Errors](#errors)
+- [Design Decisions](#design-decisions)
+- [Performance](#performance)
+- [Architecture](#architecture)
+- [Development](#development)
+- [License](#license)
 
-Most rate limiters ship one algorithm and hope for the best. Different use cases need different algorithms -- APIs need burst tolerance (token bucket), quotas need accuracy (sliding window log), simple counters need efficiency (fixed window). ratelimit-service ships four battle-tested algorithms with atomic Redis Lua scripts, pluggable stores, and middleware for the three most popular Node.js frameworks. Pick the right algorithm for your use case, swap stores between Redis and in-memory without changing a line of business logic, and add rate limiting to any route with a single middleware call.
-
-## Features
-
-- **Four algorithms** -- Token bucket, sliding window log, sliding window counter, fixed window
-- **Atomic Redis operations** -- Lua scripts prevent race conditions under concurrency
-- **Three frameworks** -- Express, Fastify, Hono middleware out of the box
-- **IETF-compliant headers** -- `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
-- **Tiered policies** -- Different limits per user tier (free/pro/enterprise)
-- **Composite policies** -- Combine limits (10/sec AND 1000/hour)
-- **Pluggable stores** -- Redis for distributed, in-memory for single-instance
-- **Fail-open/fail-closed** -- Configurable behavior when Redis is unavailable
-- **Flexible key generation** -- By IP, user ID, API key, header, or custom function
+---
 
 ## Algorithm Comparison
 
@@ -44,9 +70,7 @@ t=0s  [-----] 0 tokens  --> Request --> DENIED (retry after 1s)
 t=1s  [*----] 1 token   --> (refilled 1) --> Request --> [-----] 0 remaining
 ```
 
-The bucket starts full. Each request drains a token. Tokens refill at a steady rate
-up to the maximum capacity. Bursts are allowed up to the bucket size, then requests
-are throttled to the refill rate.
+The bucket starts full. Each request drains a token. Tokens refill at a steady rate up to the maximum capacity. Bursts are allowed up to the bucket size, then requests are throttled to the refill rate.
 
 ### Sliding Window Log
 
@@ -104,6 +128,8 @@ THE 2x BURST PROBLEM:
 Simple and efficient, but allows double the limit at window boundaries.
 ```
 
+---
+
 ## Quick Start
 
 ```bash
@@ -141,6 +167,8 @@ app.get("/api/data", (req, res) => {
 
 app.listen(3000);
 ```
+
+---
 
 ## Usage
 
@@ -234,7 +262,7 @@ app.use(
 
 ### Tiered Rate Limiting
 
-Apply different limits based on user tier (free, pro, enterprise). The tier is resolved per-request via a custom function -- typically from JWT claims or database lookup.
+Apply different limits based on user tier (free, pro, enterprise). The tier is resolved per-request via a custom function, typically from JWT claims or a database lookup.
 
 ```typescript
 import {
@@ -273,7 +301,7 @@ app.use(
 
 ### Composite Policies
 
-Enforce multiple limits simultaneously -- all must pass. This is how you combine burst protection with sustained rate limits.
+Enforce multiple limits simultaneously. All policies must pass for a request to be allowed. Use this to combine burst protection with sustained rate limits.
 
 ```typescript
 import { CompositePolicy, byIp } from "ratelimit-service";
@@ -363,9 +391,9 @@ store.on("reconnect", () => {
 });
 ```
 
-### In-Memory Store (Testing)
+### In-Memory Store
 
-The `MemoryStore` implements all algorithms in TypeScript without requiring Redis. Use it for unit tests and single-instance development.
+`MemoryStore` implements all algorithms in TypeScript without requiring Redis. Use it for unit tests and single-instance development.
 
 ```typescript
 import { MemoryStore, RateLimiter } from "ratelimit-service";
@@ -377,17 +405,19 @@ const limiter = new RateLimiter({ store, algorithm: "sliding-window-counter" });
 const store = new MemoryStore({ nowFn: () => mockTime });
 ```
 
+---
+
 ## How It Works
 
 ### Lua Script Atomicity
 
-Rate limiting requires atomic read-modify-write operations. Without atomicity, two concurrent requests can both read the same counter value, both decide they are under the limit, and both increment -- allowing traffic above the configured limit.
+Rate limiting requires atomic read-modify-write operations. Without atomicity, two concurrent requests can both read the same counter value, both decide they are under the limit, and both increment, allowing traffic above the configured limit.
 
 **Why not MULTI/EXEC?** Redis transactions cannot read a value and branch on it within the same transaction. All commands are queued and executed without intermediate results.
 
-**Why not GET + SET?** Race condition. Two requests read `count=99` simultaneously, both see `99 < 100`, both SET `count=100`. Limit of 100 is exceeded.
+**Why not GET + SET?** Race condition. Two requests read `count=99` simultaneously, both see `99 < 100`, both SET `count=100`. The limit of 100 is exceeded.
 
-**Solution: Lua scripts via EVAL.** Redis executes Lua scripts atomically -- the event loop processes the entire script without interleaving other client commands. This gives us both atomicity and conditional logic in a single network round trip.
+**Solution: Lua scripts via EVAL.** Redis executes Lua scripts atomically. The event loop processes the entire script without interleaving other client commands. This provides both atomicity and conditional logic in a single network round trip.
 
 Here is the token bucket Lua script (simplified):
 
@@ -428,6 +458,8 @@ All middleware adapters set headers following the [IETF draft-ietf-httpapi-ratel
 | `Retry-After`           | Seconds until the next request will be allowed (429 only) | `30`    |
 
 `Retry-After` is only included in 429 responses. Reset and Retry-After values are always ceiling'd to whole seconds.
+
+---
 
 ## API Reference
 
@@ -637,6 +669,8 @@ class StoreConnectionError extends Error {
 class InvalidConfigError extends Error {}
 ```
 
+---
+
 ## Design Decisions
 
 Architecture decisions are documented as ADRs in `docs/adr/`:
@@ -648,6 +682,8 @@ Architecture decisions are documented as ADRs in `docs/adr/`:
 | [003](docs/adr/003-middleware-abstraction.md) | Middleware Abstraction | Shared core logic with thin framework-specific adapters (< 50 lines each).       |
 | [004](docs/adr/004-key-design.md)             | Key Design             | Predictable `{prefix}:{policy}:{identifier}` format for debuggability.           |
 | [005](docs/adr/005-failure-modes.md)          | Failure Modes          | Fail-open by default; configurable fail-closed for security-critical paths.      |
+
+---
 
 ## Performance
 
@@ -662,6 +698,8 @@ Approximate benchmarks (single Redis instance, localhost):
 
 Redis latency is dominated by the network round trip. The Lua scripts themselves execute in microseconds on the Redis server. For production deployments, Redis response times are typically 0.1-1ms depending on network topology.
 
+---
+
 ## Architecture
 
 ### Class Diagram
@@ -672,7 +710,9 @@ Redis latency is dominated by the network round trip. The Lua scripts themselves
 
 ![Component Diagram](docs/component-diagram.png)
 
-## Contributing
+---
+
+## Development
 
 ```bash
 # Install dependencies
@@ -694,10 +734,8 @@ npm run typecheck
 npm run build
 ```
 
+---
+
 ## License
 
 MIT
-
----
-
-Built by [elliot736](https://ksibati.de) -- [GitHub](https://github.com/elliot736)
