@@ -1,3 +1,4 @@
+// TODO: test special character handling
 import { describe, it, expect } from 'vitest';
 import {
   byIp,
