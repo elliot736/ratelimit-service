@@ -1,4 +1,3 @@
-// TODO: add context binding tests
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { honoRateLimit } from '../../src/middleware/hono.js';
 import { RateLimiter } from '../../src/core/limiter.js';
